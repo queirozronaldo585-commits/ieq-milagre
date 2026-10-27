@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Escala de Demandas</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#1b1f24;--mut:#6b7280;--bd:#e3e6ea;--ac:#2563eb;--ok:#16a34a;--wa:#d97706;--rd:#dc2626;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111418;--card:#1b2026;--tx:#e8eaed;--mut:#9aa3ad;--bd:#2c333b;--ac:#6b9bff;--ok:#4ade80;--wa:#fbbf24;--rd:#f87171;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#111418;--card:#1b2026;--tx:#e8eaed;--mut:#9aa3ad;--bd:#2c333b;--ac:#6b9bff;--ok:#4ade80;--wa:#fbbf24;--rd:#f87171;color-scheme:dark}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:860px;margin:0 auto;padding:16px}
+header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:12px}
+h1{font-size:20px;margin:0}
+.live{font-size:12px;color:var(--mut)}
+.live b{color:var(--ok)}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin-bottom:10px}
+input,select,button{font:inherit;color:var(--tx);background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:8px 10px;max-width:100%}
+button{cursor:pointer}
+button.pri{background:var(--ac);border-color:var(--ac);color:#fff}
+button.sm{padding:4px 9px;font-size:13px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.row>input{flex:1 1 140px;min-width:0}
+.me{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+.me input{flex:1;min-width:0}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.chip{border-radius:999px;padding:4px 11px;font-size:13px}
+.chip.on{background:var(--ac);border-color:var(--ac);color:#fff}
+h2{font-size:13px;text-transform:capitalize;color:var(--mut);margin:16px 0 6px;font-weight:600}
+.item{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
+.t{font-weight:600}
+.meta{color:var(--mut);font-size:13px}
+.st-Pendente{color:var(--rd)}.st-Andamento{color:var(--wa)}.st-Concluída{color:var(--ok)}
+.done .t{text-decoration:line-through;opacity:.6}
+.who{font-size:13px;padding:2px 9px;border-radius:999px;border:1px solid var(--bd)}
+.who.none{color:var(--rd);border-color:var(--rd)}
+.banner{background:var(--card);border:1px solid var(--wa);color:var(--wa);border-radius:10px;padding:10px;margin-bottom:12px;font-size:14px}
+.empty{color:var(--mut);text-align:center;padding:24px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>📋 Escala de Demandas</h1>
+    <span class="live" id="live"></span>
+  </header>
+  <div id="banner"></div>
+
+  <div class="me">
+    <label for="nome" class="meta">Seu nome:</label>
+    <input id="nome" placeholder="Ex.: Ronaldo" maxlength="40">
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <input id="titulo" placeholder="Nova demanda / programação" maxlength="120">
+      <input id="data" type="date">
+      <input id="hora" type="time">
+      <button class="pri" id="add">Adicionar</button>
+    </div>
+  </div>
+
+  <div class="chips" id="chips"></div>
+  <div id="lista"></div>
+</div>
+
+<script>
+(function(){
+  var db=null, itens=[], filtro="";
+  var $=function(id){return document.getElementById(id)};
+  var STATUS=["Pendente","Andamento","Concluída"];
+
+  function getNome(){try{return localStorage.getItem("nome")||""}catch(e){return ""}}
+  function setNome(n){try{localStorage.setItem("nome",n)}catch(e){}}
+  function nome(){return $("nome").value.trim()}
+  function aviso(msg){var b=$("banner");b.textContent="";if(msg){var d=document.createElement("div");d.className="banner";d.textContent=msg;b.appendChild(d)}}
+
+  $("nome").value=getNome();
+  $("nome").addEventListener("change",function(){setNome(nome());render()});
+
+  function el(tag,cls,txt){var e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
+
+  async function seguro(fn){
+    try{await fn()}catch(e){aviso("Não foi possível salvar: você pode estar sem permissão de edição neste link.")}
+  }
+
+  function render(){
+    // chips de carga por pessoa
+    var cont={};
+    itens.forEach(function(i){if(i.resp&&i.status!=="Concluída"){cont[i.resp]=(cont[i.resp]||0)+1}});
+    var chips=$("chips");chips.textContent="";
+    var todos=el("button","chip"+(filtro===""?" on":""),"Todos ("+itens.length+")");
+    todos.onclick=function(){filtro="";render()};chips.appendChild(todos);
+    var semResp=itens.filter(function(i){return !i.resp}).length;
+    if(semResp){var s=el("button","chip"+(filtro==="__sem"?" on":""),"Sem responsável ("+semResp+")");s.onclick=function(){filtro="__sem";render()};chips.appendChild(s)}
+    Object.keys(cont).sort().forEach(function(p){
+      var c=el("button","chip"+(filtro===p?" on":""),p+" ("+cont[p]+")");
+      c.onclick=function(){filtro=p;render()};chips.appendChild(c);
+    });
+
+    var lista=$("lista");lista.textContent="";
+    var vis=itens.filter(function(i){
+      if(filtro==="")return true;
+      if(filtro==="__sem")return !i.resp;
+      return i.resp===filtro;
+    }).sort(function(a,b){return ((a.data||"9999")+(a.hora||"")).localeCompare((b.data||"9999")+(b.hora||""))});
+    if(!vis.length){lista.appendChild(el("div","empty","Nenhuma demanda por aqui ainda."));return}
+
+    var grupo=null;
+    vis.forEach(function(i){
+      if(i.data!==grupo){
+        grupo=i.data;
+        var rot="Sem data";
+        if(i.data){rot=new Date(i.data+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"long",day:"2-digit",month:"long"})}
+        lista.appendChild(el("h2",null,rot));
+      }
+      var card=el("div","card item"+(i.status==="Concluída"?" done":""));
+      var esq=el("div");
+      esq.appendChild(el("div","t",i.titulo||"(sem título)"));
+      var meta=el("div","meta",(i.hora?i.hora+" · ":"")+(i.criadoPor?"criada por "+i.criadoPor:""));
+      esq.appendChild(meta);
+      card.appendChild(esq);
+
+      var dir=el("div","row");
+      dir.appendChild(el("span","who"+(i.resp?"":" none"),i.resp?"👤 "+i.resp:"Sem responsável"));
+
+      var bt=el("button","sm",i.resp?(i.resp===nome()?"Liberar":"Assumir"):"Assumir");
+      bt.onclick=function(){
+        var n=nome();
+        if(!n){$("nome").focus();aviso("Digite seu nome no topo para assumir demandas.");return}
+        aviso("");
+        var novo=(i.resp===n)?"":n;
+        seguro(function(){return db.doc("demandas/"+i.id).update({resp:novo})});
+      };
+      dir.appendChild(bt);
+
+      var sel=el("select");
+      STATUS.forEach(function(s){var o=el("option",null,s==="Andamento"?"Em andamento":s);o.value=s;if(s===i.status)o.selected=true;sel.appendChild(o)});
+      sel.className="st-"+(i.status||"Pendente");
+      sel.onchange=function(){seguro(function(){return db.doc("demandas/"+i.id).update({status:sel.value})})};
+      dir.appendChild(sel);
+
+      var x=el("button","sm","✕");x.title="Excluir";
+      x.onclick=function(){seguro(function(){return db.doc("demandas/"+i.id).delete()})};
+      dir.appendChild(x);
+
+      card.appendChild(dir);
+      lista.appendChild(card);
+    });
+  }
+
+  $("add").onclick=function(){
+    var t=$("titulo").value.trim();
+    if(!t)return;
+    if(!db){aviso("Banco em tempo real indisponível nesta visualização.");return}
+    aviso("");
+    seguro(async function(){
+      await db.collection("demandas").add({titulo:t,data:$("data").value||"",hora:$("hora").value||"",resp:"",status:"Pendente",criadoPor:nome()});
+      $("titulo").value="";
+    });
+  };
+  $("titulo").addEventListener("keydown",function(e){if(e.key==="Enter")$("add").click()});
+
+  render();
+  (async function(){
+    try{
+      db=await window.claude.use("db");
+    }catch(e){db=null}
+    if(!db){aviso("Modo demonstração: o tempo real só funciona quando a página é aberta pelo link publicado, com login.");return}
+    $("live").textContent="";
+    var b=el("b",null,"●");$("live").appendChild(b);$("live").appendChild(document.createTextNode(" ao vivo"));
+    db.collection("demandas").onSnapshot(function(snap){
+      itens=snap.docs.map(function(d){var o=d.data()||{};o.id=d.id;return o});
+      render();
+    },function(){aviso("Conexão em tempo real interrompida. Recarregue a página.")});
+  })();
+})();
+</script>
+</body>
+</html>
